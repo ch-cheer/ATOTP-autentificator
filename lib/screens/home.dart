@@ -3,10 +3,16 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:base32/base32.dart';
 import 'package:go_router/go_router.dart';
+import 'dart:async';
+import 'dart:convert';
+//import 'dart:math';
+//import 'dart:typed_data';
+import 'package:crypto/crypto.dart';
 import '../provider.dart';
 import '../data/database.dart';
 import '../core/platform_capabilities.dart';
 import '../core/qr_scan.dart';
+import '../core/backend.dart';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -167,6 +173,115 @@ class _ServiceCard extends ConsumerStatefulWidget {
 
 class _ServiceCardState extends ConsumerState<_ServiceCard> {
   bool _isExpanded = false;
+  String? _addressBase32;
+  String? _currentCode;
+  int _remainingTime = 0;
+  Timer? _codeTimer;
+
+  @override
+  void dispose() {
+    _codeTimer?.cancel();
+    super.dispose();
+  }
+
+  void _startCodeGeneration(String addressBase32) {
+    _addressBase32 = addressBase32;
+    _updateCode();
+    
+    _codeTimer?.cancel();
+    _codeTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      final newTime = remainingSeconds(interval: widget.service.period);
+      if (newTime == widget.service.period) {
+        _updateCode();
+      } else {
+        setState(() => _remainingTime = newTime);
+      }
+    });
+  }
+
+  void _updateCode() {
+    if (_addressBase32 == null || !mounted) return;
+
+    try {
+      final algorithm = _getHashAlgorithm(widget.service.algorithm);
+      final code = generateATOTP(
+        generalsecretBase32: widget.service.secret,
+        addressBase32: _addressBase32!,
+        algorithm: algorithm,
+        interval: widget.service.period,
+        digits: widget.service.digits,
+      );
+
+      if (mounted) {
+        setState(() {
+          _currentCode = code;
+          _remainingTime = remainingSeconds(interval: widget.service.period);
+        });
+      }
+    } catch (e) {
+      debugPrint('Ошибка генерации: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Ошибка генерации кода: $e')),
+        );
+      }
+    }
+  }
+
+  Hash _getHashAlgorithm(String name) {
+    switch (name.toLowerCase()) {
+      case 'sha1': return sha1;
+      case 'sha256': return sha256;
+      case 'sha512': return sha512;
+      default: return sha1;
+    }
+  }
+
+  void _resetAddress() {
+    setState(() {
+      _addressBase32 = null;
+      _currentCode = null;
+      _remainingTime = 0;
+    });
+    _codeTimer?.cancel();
+    _codeTimer = null;
+  }
+
+  Future<void> _handleManualAddressInput() async {
+    final addressBase32 = await _showManualAddressInputDialog(
+      context, 
+      ref, 
+      widget.service,
+    );
+    if (addressBase32 == null || !mounted) return;
+    _startCodeGeneration(addressBase32);
+  }
+
+  Future<void> _handlePasteLinkAddressInput() async {
+    await _showStubDialog(
+      context,
+      title: 'Вставить ссылку',
+      message: 'Вставка ссылки для "${widget.service.label}" пока не реализована.',
+    );
+  }
+
+  Future<void> _handleScanQrAddressInput() async {
+    if (!PlatformCapabilities.supportsQrScanning) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Сканирование недоступно на этой платформе')),
+      );
+      return;
+    }
+    await _showStubDialog(
+      context,
+      title: 'Сканировать QR',
+      message: 'Сканирование для "${widget.service.label}" пока в разработке.',
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -204,12 +319,19 @@ class _ServiceCardState extends ConsumerState<_ServiceCard> {
               _isExpanded ? Icons.expand_less : Icons.expand_more,
               size: 20,
             ),
-            onTap: () {
-              setState(() {
-                _isExpanded = !_isExpanded;
-              });
+            onTap: () => setState(() => _isExpanded = !_isExpanded),
+            onLongPress: () {
+              if (_currentCode != null) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Редактирование недоступно, пока активен код. Сбросьте адрес.'),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+                return;
+              }
+              _showServicesAction(context, ref, service);
             },
-            onLongPress: () => _showServicesAction(context, ref, service),
           ),
           AnimatedCrossFade(
             duration: const Duration(milliseconds: 200),
@@ -219,9 +341,12 @@ class _ServiceCardState extends ConsumerState<_ServiceCard> {
             firstChild: const SizedBox.shrink(),
             secondChild: _AddressInputSection(
               service: service,
-              onManualInput: () => _showManualAddressInputDialog(context, ref, service),
-              onPasteLink: () => _showAddressPasteLinkDialog(context, ref, service),
-              onScanQr: () => _scanAddressQrCode(context, ref, service),
+              onManualInput: _handleManualAddressInput,
+              onPasteLink: _handlePasteLinkAddressInput,
+              onScanQr: _handleScanQrAddressInput,
+              currentCode: _currentCode,
+              remainingTime: _remainingTime,
+              onReset: _resetAddress,
             ),
           ),
         ],
@@ -230,23 +355,115 @@ class _ServiceCardState extends ConsumerState<_ServiceCard> {
   }
 }
 
+class _AddressInputConfig {
+  final String title;
+  final String label;
+  final String hint;
+  final TextInputType keyboardType;
+  final String? Function(String)? validator;
+  
+  _AddressInputConfig({
+    required this.title,
+    required this.label,
+    required this.hint,
+    required this.keyboardType,
+    this.validator,
+  });
+}
+
+_AddressInputConfig _getAddressInputConfig(int addressOption) {
+  switch (addressOption) {
+    case 1: //IP
+      return _AddressInputConfig(
+        title: 'Введите IP-адрес',
+        label: 'IP-адрес',
+        hint: 'Например: 192.168.1.1',
+        keyboardType: TextInputType.text,
+        validator: (input) {
+          if (!RegExp(r'^(\d{1,3}\.){3}\d{1,3}$').hasMatch(input)) return 'Неверный формат IP';
+          final parts = input.split('.');
+          for (final part in parts) {
+            final num = int.tryParse(part);
+            if (num == null || num < 0 || num > 255) return 'Октет должен быть 0-255';
+          }
+          return null;
+        },
+      );
+    case 2: //URL
+      return _AddressInputConfig(
+        title: 'Введите URL ресурса',
+        label: 'URL',
+        hint: 'Например: https://example.com',
+        keyboardType: TextInputType.url,
+        validator: (input) {
+          if (!input.startsWith('http://') && !input.startsWith('https://')) {
+            return 'URL должен начинаться с http:// или https://';
+          }
+          try { Uri.parse(input); return null; } catch (_) { return 'Неверный формат URL'; }
+        },
+      );
+    case 3: //IP и URL
+      return _AddressInputConfig(
+        title: 'Введите IP и URL ресурса',
+        label: 'IP и URL (через запятую)',
+        hint: 'Например: 192.168.1.1,https://example.com',
+        keyboardType: TextInputType.text,
+        validator: (input) {
+          final parts = input.split(',').map((s) => s.trim()).toList();
+          if (parts.length != 2) return 'Введите два значения через запятую';
+          final ip = parts[0], url = parts[1];
+          if (!RegExp(r'^(\d{1,3}\.){3}\d{1,3}$').hasMatch(ip)) return 'Неверный формат IP';
+          final ipParts = ip.split('.');
+          for (final part in ipParts) {
+            final num = int.tryParse(part);
+            if (num == null || num < 0 || num > 255) return 'Октет IP должен быть 0-255';
+          }
+          if (!url.startsWith('http://') && !url.startsWith('https://')) {
+            return 'URL должен начинаться с http:// или https://';
+          }
+          try { Uri.parse(url); } catch (_) { return 'Неверный формат URL'; }
+          return null;
+        },
+      );
+    default:
+      return _AddressInputConfig(
+        title: 'Введите адрес',
+        label: 'Адрес',
+        hint: '',
+        keyboardType: TextInputType.text,
+      );
+  }
+}
+
 class _AddressInputSection extends StatelessWidget {
   final ATOTPData service;
   final VoidCallback onManualInput;
   final VoidCallback onPasteLink;
   final VoidCallback onScanQr;
+  final String? currentCode;
+  final int? remainingTime;
+  final VoidCallback? onReset;
 
   const _AddressInputSection({
     required this.service,
     required this.onManualInput,
     required this.onPasteLink,
     required this.onScanQr,
+    this.currentCode,
+    this.remainingTime,
+    this.onReset,
   });
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    if (currentCode != null && onReset != null) {
+      return _buildCodeDisplay(context, colorScheme);
+    }
+    return _buildInputButtons(context, colorScheme);
+  }
 
+  Widget _buildInputButtons(BuildContext context, ColorScheme colorScheme) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
       child: Column(
@@ -254,10 +471,7 @@ class _AddressInputSection extends StatelessWidget {
         children: [
           Divider(color: colorScheme.outlineVariant),
           const SizedBox(height: 8),
-          Text(
-            'Ввод адреса',
-            style: Theme.of(context).textTheme.titleSmall,
-          ),
+          Text('Ввод адреса', style: Theme.of(context).textTheme.titleSmall),
           const SizedBox(height: 12),
           Container(
             width: double.infinity,
@@ -276,29 +490,66 @@ class _AddressInputSection extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              Expanded(
-                child: _AddressActionButton(
-                  icon: Icons.edit_outlined,
-                  label: 'Ввести вручную',
-                  onTap: onManualInput,
-                ),
-              ),
-              Expanded(
-                child: _AddressActionButton(
-                  icon: Icons.link_outlined,
-                  label: 'Вставить ссылку',
-                  onTap: onPasteLink,
-                ),
-              ),
+              Expanded(child: _AddressActionButton(icon: Icons.edit_outlined, label: 'Ввести вручную', onTap: onManualInput)),
+              Expanded(child: _AddressActionButton(icon: Icons.link_outlined, label: 'Вставить ссылку', onTap: onPasteLink)),
               if (PlatformCapabilities.supportsQrScanning)
-                Expanded(
-                  child: _AddressActionButton(
-                    icon: Icons.qr_code_outlined,
-                    label: 'Сканировать QR',
-                    onTap: onScanQr,
+                Expanded(child: _AddressActionButton(icon: Icons.qr_code_outlined, label: 'Сканировать QR', onTap: onScanQr)),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCodeDisplay(BuildContext context, ColorScheme colorScheme) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Divider(color: colorScheme.outlineVariant),
+          const SizedBox(height: 8),
+          Text('ATOTP код', style: Theme.of(context).textTheme.titleSmall),
+          const SizedBox(height: 12),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: colorScheme.primaryContainer,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: colorScheme.primary),
+            ),
+            child: Column(
+              children: [
+                Text(
+                  currentCode!,
+                  style: TextStyle(
+                    fontSize: 32,
+                    fontWeight: FontWeight.bold,
+                    fontFamily: 'monospace',
+                    color: colorScheme.onPrimaryContainer,
+                    letterSpacing: 8,
                   ),
                 ),
-            ],
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.timer_outlined, size: 16),
+                    const SizedBox(width: 4),
+                    Text('$remainingTime с', style: TextStyle(fontSize: 14, color: colorScheme.onPrimaryContainer)),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          Center(
+            child: OutlinedButton.icon(
+              onPressed: onReset,
+              icon: const Icon(Icons.refresh_outlined),
+              label: const Text('Сбросить адрес'),
+            ),
           ),
         ],
       ),
@@ -539,49 +790,88 @@ String _addressOptionLabel(int option) {
   }
 }
 
-Future<void> _showManualAddressInputDialog(
+Future<String?> _showManualAddressInputDialog(
   BuildContext context,
   WidgetRef ref,
   ATOTPData service,
 ) async {
-  await _showStubDialog(
-    context,
-    title: 'Ввести вручную',
-    message: 'Ручной ввод адреса для "${service.label}" пока не реализован.',
+  final config = _getAddressInputConfig(service.addressOption);
+  final controller = TextEditingController();
+  String? error;
+
+  final result = await showDialog<String>(
+    context: context,
+    builder: (dialogContext) {
+      return StatefulBuilder(
+        builder: (dialogCtx, setDialogState) {
+          return AlertDialog(
+            title: Text(config.title),
+            content: TextField(
+              controller: controller,
+              decoration: InputDecoration(
+                labelText: config.label,
+                hintText: config.hint,
+                errorText: error,
+                border: const OutlineInputBorder(),
+              ),
+              keyboardType: config.keyboardType,
+              textInputAction: TextInputAction.done,
+              onSubmitted: (_) => _trySubmit(
+                controller.text.trim(),
+                config,
+                setDialogState,
+                (err) => setDialogState(() => error = err),
+                dialogCtx,
+              ),
+              onChanged: (_) => setDialogState(() => error = null),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogCtx).pop(),
+                child: const Text('Отмена'),
+              ),
+              FilledButton(
+                onPressed: () => _trySubmit(
+                  controller.text.trim(),
+                  config,
+                  setDialogState,
+                  (err) => setDialogState(() => error = err),
+                  dialogCtx,
+                ),
+                child: const Text('Продолжить'),
+              ),
+            ],
+          );
+        },
+      );
+    },
   );
+  
+  controller.dispose();
+  return result;
 }
 
-Future<void> _showAddressPasteLinkDialog(
-  BuildContext context,
-  WidgetRef ref,
-  ATOTPData service,
-) async {
-  await _showStubDialog(
-    context,
-    title: 'Вставить ссылку',
-    message: 'Вставка ссылки для "${service.label}" пока не реализована.',
-  );
-}
-
-Future<void> _scanAddressQrCode(
-  BuildContext context,
-  WidgetRef ref,
-  ATOTPData service,
-) async {
-  if (!PlatformCapabilities.supportsQrScanning) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Сканирование QR недоступно на этой платформе'),
-      ),
-    );
+void _trySubmit(
+  String input,
+  _AddressInputConfig config,
+  void Function(void Function()) setDialogState,
+  void Function(String?) onError,
+  BuildContext dialogCtx,
+) {
+  if (input.isEmpty) {
+    onError('Введите значение');
     return;
   }
-
-  await _showStubDialog(
-    context,
-    title: 'Сканировать QR',
-    message: 'Сканирование QR для "${service.label}" пока в разработке.',
-  );
+  if (config.validator != null) {
+    final validationError = config.validator!(input);
+    if (validationError != null) {
+      onError(validationError);
+      return;
+    }
+  }
+  
+  final addressBase32 = base32.encode(utf8.encode(input));
+  Navigator.of(dialogCtx).pop(addressBase32);
 }
 
 void _showServicesAction(BuildContext context, WidgetRef ref, ATOTPData service) {
