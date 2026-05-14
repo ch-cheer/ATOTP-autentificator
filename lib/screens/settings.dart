@@ -38,13 +38,13 @@ class SettingsScreen extends ConsumerWidget {
             child: ListTile(
               leading: const Icon(Icons.info_outline),
               title: const Text("О приложении"),
-              subtitle: const Text("Версия development 0.1"),
+              subtitle: const Text("Версия \"Диплом\" 0.9"),
               trailing: const Icon(Icons.chevron_right),
               onTap: () {
                 showAboutDialog(
                   context: context,
                   applicationName: 'ATOTP autentificator',
-                  applicationVersion: '0.1',
+                  applicationVersion: '0.9',
                   children: const [
                     Text("Приложение для генерации ATOTP кодов"),
                   ],

@@ -305,6 +305,33 @@ class AppDatabase extends _$AppDatabase {
       return null;
     }
   }
+
+  static ParsedAddressData? extractAddressFromOtpauth(String input) {
+    try {
+      final uri = Uri.parse(input.trim());
+      
+      if (uri.scheme.toLowerCase() != 'otpauth') return null;
+      if (uri.host.toLowerCase() != 'atotp') return null;
+      
+      final ipBase32 = uri.queryParameters['ip-address'];
+      final urlBase32 = uri.queryParameters['url'];
+      final clientUlidRaw = uri.queryParameters['client'];
+      
+      if (clientUlidRaw == null || !isValidUlid(clientUlidRaw)) return null;
+      
+      final base32Regex = RegExp(r'^[A-Z2-7]+$', caseSensitive: false);
+      if (ipBase32 != null && !base32Regex.hasMatch(ipBase32)) return null;
+      if (urlBase32 != null && !base32Regex.hasMatch(urlBase32)) return null;
+      
+      return ParsedAddressData(
+        ipBase32: ipBase32?.toUpperCase(),
+        urlBase32: urlBase32?.toUpperCase(),
+        clientUlid: clientUlidRaw.toLowerCase(),
+      );
+    } catch (e) {
+      return null;
+    }
+  }
 }
 
 LazyDatabase _openConnection() {
@@ -332,5 +359,17 @@ class ParsedATOTPService {
     required this.digits,
     required this.period,
     required this.addressOption,
+  });
+}
+
+class ParsedAddressData {
+  final String? ipBase32;
+  final String? urlBase32;
+  final String clientUlid;
+  
+  ParsedAddressData({
+    this.ipBase32,
+    this.urlBase32,
+    required this.clientUlid,
   });
 }

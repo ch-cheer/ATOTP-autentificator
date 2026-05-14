@@ -13,3 +13,8 @@ OS must be:
 * Linux
 
 This mobile autentificator which 
+
+## TODO:
+
+* More langues (as min english)
+* Encryption database

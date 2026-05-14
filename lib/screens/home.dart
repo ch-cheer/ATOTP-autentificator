@@ -262,10 +262,26 @@ class _ServiceCardState extends ConsumerState<_ServiceCard> {
   }
 
   Future<void> _handlePasteLinkAddressInput() async {
-    await _showStubDialog(
+    final clipboardData = await Clipboard.getData('text/plain');
+    if (!mounted) return;
+
+    final input = clipboardData?.text?.trim();
+
+    if (input == null || input.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Буфер обмена пуст')),
+        );
+      }
+      return;
+    }
+
+    await _processAddressLink(
+      input,
       context,
-      title: 'Вставить ссылку',
-      message: 'Вставка ссылки для "${widget.service.label}" пока не реализована.',
+      ref,
+      widget.service,
+      (addressBase32) => _startCodeGeneration(addressBase32),
     );
   }
 
@@ -276,10 +292,16 @@ class _ServiceCardState extends ConsumerState<_ServiceCard> {
       );
       return;
     }
-    await _showStubDialog(
+    
+    final scannedText = await scanQRCode(context);
+    if (scannedText == null || !mounted) return;
+    
+    await _processAddressLink(
+      scannedText,
       context,
-      title: 'Сканировать QR',
-      message: 'Сканирование для "${widget.service.label}" пока в разработке.',
+      ref,
+      widget.service,
+      (addressBase32) => _startCodeGeneration(addressBase32),
     );
   }
 
@@ -603,25 +625,120 @@ class _AddressActionButton extends StatelessWidget {
   }
 }
 
-//Delete
-Future<void> _showStubDialog(
-  BuildContext context, {
-  required String title,
-  required String message,
-}) {
-  return showDialog<void>(
-    context: context,
-    builder: (dialogContext) => AlertDialog(
-      title: Text(title),
-      content: Text(message),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(dialogContext).pop(),
-          child: const Text('Закрыть'),
-        ),
-      ],
-    ),
-  );
+Future<void> _processAddressLink(
+  String input,
+  BuildContext context,
+  WidgetRef ref,
+  ATOTPData service,
+  void Function(String) onCodeGenerated,
+) async {
+  final parsed = AppDatabase.extractAddressFromOtpauth(input);
+  if (parsed == null) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Не удалось распознать ссылку адреса')),
+      );
+    }
+    return;
+  }
+  
+  final db = ref.read(dbProvider);
+  final client = await db.getClientByUlid(parsed.clientUlid);
+  if (!context.mounted) return;
+  
+  if (client == null) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Неизвестный клиент, если это вы, то зарегистрируйтесь во вкладке клиенты'),
+        backgroundColor: Colors.orange,
+        duration: Duration(seconds: 4),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+    return;
+  }
+  
+  String? plainIp, plainUrl;
+  bool ipError = false, urlError = false;
+  
+  if (parsed.ipBase32 != null) {
+    try {
+      plainIp = utf8.decode(base32.decode(parsed.ipBase32!));
+    } catch (_) {
+      ipError = true;
+    }
+  }
+  
+  if (parsed.urlBase32 != null) {
+    try {
+      plainUrl = utf8.decode(base32.decode(parsed.urlBase32!));
+    } catch (_) {
+      urlError = true;
+    }
+  }
+  
+  if (!context.mounted) return;
+  if (ipError) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Неверный формат IP в ссылке')),
+    );
+    return;
+  }
+  if (urlError) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Неверный формат URL в ссылке')),
+    );
+    return;
+  }
+  
+  String? selectedPlainAddress;
+  
+  switch (service.addressOption) {
+    case 1: // Только IP
+      if (parsed.ipBase32 == null || plainIp == null || plainIp.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('В ссылке отсутствует IP-адрес')),
+        );
+        return;
+      }
+      selectedPlainAddress = plainIp;
+      break;
+      
+    case 2: // Только URL
+      if (parsed.urlBase32 == null || plainUrl == null || plainUrl.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('В ссылке отсутствует URL')),
+        );
+        return;
+      }
+      selectedPlainAddress = plainUrl;
+      break;
+      
+    case 3: // IP и URL
+      final ipReady = parsed.ipBase32 != null && plainIp != null && plainIp.isNotEmpty;
+      final urlReady = parsed.urlBase32 != null && plainUrl != null && plainUrl.isNotEmpty;
+      
+      if (ipReady && urlReady) {
+        selectedPlainAddress = '$plainIp,$plainUrl';
+      } else if (ipReady) {
+        selectedPlainAddress = plainIp;
+      } else if (urlReady) {
+        selectedPlainAddress = plainUrl;
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('В ссылке нет данных для адреса')),
+        );
+        return;
+      }
+      break;
+      
+    default:
+      return;
+  }
+  
+  if (!context.mounted) return;
+  final addressBase32 = base32.encode(utf8.encode(selectedPlainAddress));
+  onCodeGenerated(addressBase32);
 }
 
 class _ShowAddServiceDialog extends StatelessWidget {
