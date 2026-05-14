@@ -14,7 +14,7 @@ OS must be:
 * Windows
 * Macos
 
-This mobile autentificator which 
+MacOS and IOS and Linux are in dev, but if configure it'll work
 
 ## TODO:
 
