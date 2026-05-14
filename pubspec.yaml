@@ -1,0 +1,72 @@
+name: atotp
+description: "Application for generataion One-Time passwords use algorithm ATOTP"
+publish_to: 'none' # Remove this line if you wish to publish to pub.dev
+
+version: 1.0.0+1
+
+homepage: https://github.com/ch-cheer
+repository: https://github.com/ch-cheer/ATOTP-autentificator
+documentation: https://github.com/ch-cheer/ATOTP-autentificator/documentation
+issue_tracker: https://github.com/ch-cheer/ATOTP-autentificator/issues
+
+environment:
+  sdk: ^3.11.5
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.9 
+  flutter_riverpod: ^3.3.1
+  go_router: ^17.2.3
+  flutter_secure_storage: ^10.0.0
+  shared_preferences: ^2.5.5 
+  mobile_scanner: ^7.2.0
+  pointycastle: ^4.0.0 
+  base32: ^2.2.0 
+  collection: ^1.19.1
+  crypto: ^3.0.7
+  convert: ^3.1.2
+  drift: ^2.33.0
+  sqlite3_flutter_libs: ^0.6.0+eol
+  path_provider: ^2.1.5
+  path: ^1.9.1
+  permission_handler: ^12.0.1
+  window_manager: ^0.5.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  drift_dev: ^2.33.0
+  build_runner: ^2.15.0
+  flutter_launcher_icons: ^0.14.4
+
+flutter:
+  uses-material-design: true
+
+flutter_launcher_icons:
+  image_path_android: "assets/images/icon-1024x1024.png"
+  image_path_ios: "assets/images/icon-1024x1024.png"
+  android: true
+  ios: true
+  adaptive_icon_background: "assets/images/icon-background.png"
+  adaptive_icon_foreground: "assets/images/icon-foreground.png"
+  adaptive_icon_foreground_inset: 16
+  adaptive_icon_monochrome: "assets/images/icon-monochrome.png"
+  min_sdk_android: 21
+  remove_alpha_ios: true
+  background_color_ios: "#e6e6e6"
+  windows:
+    generate: true
+    image_path: "assets/images/icon-desktop.png"
+    icon_size: 256
+  macos:
+    generate: true
+    image_path: "assets/images/icon-desktop.png"
+
+platforms:
+  android:
+  ios:
+  linux:
+  macos:
+  windows:
