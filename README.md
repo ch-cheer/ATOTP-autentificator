@@ -11,10 +11,13 @@ OS must be:
 * Android
 * IOS
 * Linux
+* Windows
+* Macos
 
 This mobile autentificator which 
 
 ## TODO:
 
 * More langues (as min english)
-* Encryption database
+
+### This is alpfa or beta, there're many bags but it works

@@ -348,7 +348,7 @@ LazyDatabase _openConnection() {
       setup: (rawDb) {
         assert(
           DbKeyManager.debugCheckCipherEnabled(rawDb),
-          'SQLite3MultipleCiphers не подключён!',
+          'SQLite3MultipleCiphers не подключён! Проверте наличие openSSL',
         );
         rawDb.execute("PRAGMA key = '${DbKeyManager.escapeKey(dbKey)}';");
       },

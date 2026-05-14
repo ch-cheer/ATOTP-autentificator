@@ -51,8 +51,8 @@ flutter:
   uses-material-design: true
 
 flutter_launcher_icons:
-  image_path_android: "assets/images/icon-1024x1024.png"
-  image_path_ios: "assets/images/icon-1024x1024.png"
+  image_path_android: "assets/images/icon-1024x1024-smaller.png"
+  image_path_ios: "assets/images/icon-1024x1024-smaller.png"
   android: true
   ios: true
   adaptive_icon_background: "assets/images/icon-background.png"
@@ -63,12 +63,10 @@ flutter_launcher_icons:
   remove_alpha_ios: true
   background_color_ios: "#e6e6e6"
   windows:
-    generate: true
-    image_path: "assets/images/icon-desktop.png"
-    icon_size: 256
+    generate: false
   macos:
     generate: true
-    image_path: "assets/images/icon-desktop.png"
+    image_path: "assets/images/icon-1024x1024.png"
 
 platforms:
   android:
