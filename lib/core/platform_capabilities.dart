@@ -16,5 +16,5 @@ abstract final class PlatformCapabilities {
       defaultTargetPlatform == TargetPlatform.linux;
 
   static bool get supportsQrScanning =>
-      !kIsWeb && (isMobile || isMacOS);
+      !kIsWeb && isMobile;
 }
