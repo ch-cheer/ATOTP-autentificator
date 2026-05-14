@@ -3,6 +3,8 @@ import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
+import 'package:sqlite3/sqlite3.dart';
+import 'db_key_manager.dart';
 //import 'package:pointycastle/api.dart';
 //import 'package:sqlite3_flutter_libs/sqlite3_flutter_libs.dart';
 
@@ -338,7 +340,19 @@ LazyDatabase _openConnection() {
   return LazyDatabase(() async {
     final dbFolder = await getApplicationDocumentsDirectory();
     final file = File(p.join(dbFolder.path, 'database.sqlite'));
-    return NativeDatabase.createInBackground(file);
+
+    final dbKey = await DbKeyManager.getOrCreateKey();
+    
+    return NativeDatabase.createInBackground(
+      file,
+      setup: (rawDb) {
+        assert(
+          DbKeyManager.debugCheckCipherEnabled(rawDb),
+          'SQLite3MultipleCiphers не подключён!',
+        );
+        rawDb.execute("PRAGMA key = '${DbKeyManager.escapeKey(dbKey)}';");
+      },
+    );
   });
 }
 

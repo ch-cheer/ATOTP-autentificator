@@ -2,7 +2,7 @@ name: atotp
 description: "Application for generataion One-Time passwords use algorithm ATOTP"
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 
-version: 1.0.0+1
+version: 0.9.1+1
 
 homepage: https://github.com/ch-cheer
 repository: https://github.com/ch-cheer/ATOTP-autentificator
@@ -27,11 +27,17 @@ dependencies:
   crypto: ^3.0.7
   convert: ^3.1.2
   drift: ^2.33.0
+  sqlite3: ^3.3.1
   sqlite3_flutter_libs: ^0.6.0+eol
   path_provider: ^2.1.5
   path: ^1.9.1
   permission_handler: ^12.0.1
   window_manager: ^0.5.1
+
+hooks:
+  user_defines:
+    sqlite3:
+      source: sqlite3mc
 
 dev_dependencies:
   flutter_test:
