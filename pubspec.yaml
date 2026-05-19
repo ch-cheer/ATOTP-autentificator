@@ -52,7 +52,7 @@ flutter:
 
 flutter_launcher_icons:
   image_path_android: "assets/images/icon-1024x1024-smaller.png"
-  image_path_ios: "assets/images/icon-1024x1024-smaller.png"
+  image_path_ios: "assets/images/icon-1024x1024-no-alfa.png"
   android: true
   ios: true
   adaptive_icon_background: "assets/images/icon-background.png"
